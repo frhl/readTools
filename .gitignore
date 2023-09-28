@@ -1,0 +1,5 @@
+playground/
+variant_to_gene/
+*.txt
+*.gz
+*.o

@@ -2,9 +2,9 @@ CC = g++
 CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts -lz
-TARGET1 = candidates
+TARGET1 = pairFinder
 TARGET2 = phaseRead
-SOURCE1 = candidates.cpp
+SOURCE1 = pairFinder.cpp
 SOURCE2 = phaseRead.cpp
 
 all: $(TARGET1) $(TARGET2)
