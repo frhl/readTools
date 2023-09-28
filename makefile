@@ -3,9 +3,9 @@ CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts -lz
 TARGET1 = pairFinder
-TARGET2 = phaseRead
+TARGET2 = vcfPairFinder
 SOURCE1 = pairFinder.cpp
-SOURCE2 = phaseRead.cpp
+SOURCE2 = vcfPairFinder.cpp
 
 all: $(TARGET1) $(TARGET2)
 
