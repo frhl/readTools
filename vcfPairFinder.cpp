@@ -16,16 +16,18 @@ int main(int argc, char *argv[])
     bcf_hdr_t *hdr = bcf_hdr_read(inf);
     bcf1_t *rec = bcf_init();
 
-    // Map with sample name as key and a list of variant positions as value
-    std::map<std::string, std::list<std::pair<int, bool>>> window_variants;
+
+    // Map with sample name as key and a list of variant IDs as value
+    std::map<std::string, std::list<std::string>> window_variants;
 
     while (bcf_read(inf, hdr, rec) == 0)
     {
-        bcf_unpack(rec, BCF_UN_STR); 
+        bcf_unpack(rec, BCF_UN_STR);
         std::string ref = rec->d.allele[0];
         std::string alt = rec->d.allele[1];
-    
         int variant_position = rec->pos + 1; // 1-based position
+	std::string variant_id = "chr" + std::to_string(rec->rid + 1) + ":" + 
+                         std::to_string(variant_position) + ":" + ref + ":" + alt;
 
 
         int ngt = 0;
@@ -39,22 +41,33 @@ int main(int argc, char *argv[])
             bool is_heterozygous = nalleles == 2 && sample_genotype[0] != sample_genotype[1];
             std::string sample_name = std::string(hdr->samples[i]);
 
+            // Skip if not heterozygous
+            if (!is_heterozygous)
+                continue;
+
             auto it = window_variants[sample_name].begin();
-            while (it != window_variants[sample_name].end()) {
-                if (variant_position - it->first > 500) {
+            while (it != window_variants[sample_name].end())
+            {
+                int other_variant_position = std::stoi(it->substr(it->find(':') + 1));
+                if (variant_position - other_variant_position > 500)
+                {
                     it = window_variants[sample_name].erase(it);
-                } else {
-                    // Iterate through other variants in the window and print pairs
-                    for (const auto& pos : window_variants[sample_name]) {
-                        if (pos.first < it->first && pos.second && it->second) { 
-                            int distance = it->first - pos.first; // Calculate distance
-                            std::cout << sample_name << "\t" << distance << "\t" << pos.first << "\t" << it->first << std::endl;
+                }
+                else
+                {
+                    for (const auto &pos : window_variants[sample_name])
+                    {
+                        int pos_variant_position = std::stoi(pos.substr(pos.find(':') + 1));
+                        if (pos_variant_position < other_variant_position)
+                        {
+                            int distance = other_variant_position - pos_variant_position;
+                            std::cout << sample_name << "\t" << distance << "\t" << pos << "\t" << *it << std::endl;
                         }
                     }
                     ++it;
                 }
             }
-            window_variants[sample_name].push_back(std::make_pair(variant_position, is_heterozygous));
+            window_variants[sample_name].push_back(variant_id);
         }
 
         free(genotype);
