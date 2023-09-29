@@ -4,15 +4,60 @@
 #include <string>
 #include <iostream>
 
+
+void printUsage(const char *path)
+{
+    std::cerr << "\nProgram: vcfPairFinder v1.0.0\n" << std::endl;
+    std::cerr << "Usage: " << path << " --vcf <VCF File> [--max-bp-dist <Maximum Base Pair Distance>] \n" << std::endl;
+
+    std::cerr << "\nDescription:" << std::endl;
+    std::cerr << "  Identifies pairs of genetic heterozygous variants within a specified distance from each other in a VCF file.\n" << std::endl;
+
+    std::cerr << "\nInput:" << std::endl;
+    std::cerr << "  --vcf/-v <VCF File>          : Required. Input VCF file." << std::endl;
+    std::cerr << "  --max-bp-dist/-d <Distance>  : Optional. Maximum base pair distance between variant pairs. Default is 500." << std::endl;
+
+    std::cerr << "\nOutput Format:" << std::endl;
+    std::cerr << "  Sample, Distance, Variant1, Variant2" << std::endl;
+}
+
+
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc < 2)
     {
-        fprintf(stderr, "Usage: %s <input_vcf>\n", argv[0]);
+        printUsage(argv[0]);
         return 1;
     }
 
-    htsFile *inf = hts_open(argv[1], "r");
+    std::string vcfFile;
+    long maxBpDist = 500;
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if ((arg == "--vcf" || arg == "-v") && i + 1 < argc) // Ensure parentheses here
+        {
+            vcfFile = argv[++i];
+        }
+        else if ((arg == "--max-bp-dist" || arg == "-d") && i + 1 < argc) // And here
+        {
+            maxBpDist = std::stol(argv[++i]);
+        }
+        else
+        {
+            printUsage(argv[0]);
+            return 1;
+        }
+    }
+
+    if (vcfFile.empty())
+    {
+        std::cerr << "Error: VCF file path is required." << std::endl;
+        printUsage(argv[0]);
+        return 1;
+    }
+
+    htsFile *inf = hts_open(vcfFile.c_str(), "r");
     bcf_hdr_t *hdr = bcf_hdr_read(inf);
     bcf1_t *rec = bcf_init();
 
@@ -26,7 +71,7 @@ int main(int argc, char *argv[])
         std::string ref = rec->d.allele[0];
         std::string alt = rec->d.allele[1];
         int variant_position = rec->pos + 1; // 1-based position
-	std::string variant_id = "chr" + std::to_string(rec->rid + 1) + ":" + 
+	    std::string variant_id = "chr" + std::to_string(rec->rid + 1) + ":" +
                          std::to_string(variant_position) + ":" + ref + ":" + alt;
 
 
@@ -49,7 +94,7 @@ int main(int argc, char *argv[])
             while (it != window_variants[sample_name].end())
             {
                 int other_variant_position = std::stoi(it->substr(it->find(':') + 1));
-                if (variant_position - other_variant_position > 500)
+                if (abs(variant_position - other_variant_position) > maxBpDist)
                 {
                     it = window_variants[sample_name].erase(it);
                 }
