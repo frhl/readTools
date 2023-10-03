@@ -3,15 +3,18 @@
 #include <list>
 #include <string>
 #include <iostream>
-
+#include <set>
 
 void printUsage(const char *path)
 {
-    std::cerr << "\nProgram: vcfPairFinder v1.0.0\n" << std::endl;
-    std::cerr << "Usage: " << path << " --vcf <VCF File> [--max-bp-dist <Maximum Base Pair Distance>] \n" << std::endl;
+    std::cerr << "\nProgram: vcfPairFinder v1.0.0\n"
+              << std::endl;
+    std::cerr << "Usage: " << path << " --vcf <VCF File> [--max-bp-dist <Maximum Base Pair Distance>] \n"
+              << std::endl;
 
     std::cerr << "\nDescription:" << std::endl;
-    std::cerr << "  Identifies pairs of genetic heterozygous variants within a specified distance from each other in a VCF file.\n" << std::endl;
+    std::cerr << "  Identifies pairs of genetic heterozygous variants within a specified distance from each other in a VCF file.\n"
+              << std::endl;
 
     std::cerr << "\nInput:" << std::endl;
     std::cerr << "  --vcf/-v <VCF File>          : Required. Input VCF file." << std::endl;
@@ -20,7 +23,6 @@ void printUsage(const char *path)
     std::cerr << "\nOutput Format:" << std::endl;
     std::cerr << "  Sample, Distance, Variant1, Variant2" << std::endl;
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -62,60 +64,64 @@ int main(int argc, char *argv[])
     bcf1_t *rec = bcf_init();
 
 
-    // Map with sample name as key and a list of variant IDs as value
-    std::map<std::string, std::list<std::string>> window_variants;
+     // Map with sample name as key and a set of variant IDs as value
+    std::map<std::string, std::set<std::pair<int, std::string>>> heterozygous_variants;
 
-    while (bcf_read(inf, hdr, rec) == 0)
-    {
+    while (bcf_read(inf, hdr, rec) == 0) {
         bcf_unpack(rec, BCF_UN_STR);
+        int variant_position = rec->pos + 1;
         std::string ref = rec->d.allele[0];
         std::string alt = rec->d.allele[1];
-        int variant_position = rec->pos + 1; // 1-based position
-	    std::string variant_id = "chr" + std::to_string(rec->rid + 1) + ":" +
-                         std::to_string(variant_position) + ":" + ref + ":" + alt;
-
+        std::string variant_id = "chr" + std::to_string(rec->rid + 1) + ":" +
+                                std::to_string(variant_position) + ":" + ref + ":" + alt;
 
         int ngt = 0;
         int *genotype = NULL;
         ngt = bcf_get_genotypes(hdr, rec, &genotype, &ngt);
-        int nalleles = ngt / bcf_hdr_nsamples(hdr);
 
-        for (int i = 0; i < bcf_hdr_nsamples(hdr); i++)
-        {
-            int *sample_genotype = genotype + i * nalleles;
-            bool is_heterozygous = nalleles == 2 && sample_genotype[0] != sample_genotype[1];
+        for (int i = 0; i < bcf_hdr_nsamples(hdr); i++) {
+            int *sample_genotype = genotype + i * 2; // Assuming diploid organisms
+            int allele1 = bcf_gt_allele(sample_genotype[0]);
+            int allele2 = bcf_gt_allele(sample_genotype[1]);
+
+            bool is_heterozygous = allele1 != allele2 && allele1 >= 0 && allele2 >= 0;
             std::string sample_name = std::string(hdr->samples[i]);
 
-            // Skip if not heterozygous
-            if (!is_heterozygous)
-                continue;
-
-            auto it = window_variants[sample_name].begin();
-            while (it != window_variants[sample_name].end())
-            {
-                int other_variant_position = std::stoi(it->substr(it->find(':') + 1));
-                if (abs(variant_position - other_variant_position) > maxBpDist)
-                {
-                    it = window_variants[sample_name].erase(it);
-                }
-                else
-                {
-                    for (const auto &pos : window_variants[sample_name])
-                    {
-                        int pos_variant_position = std::stoi(pos.substr(pos.find(':') + 1));
-                        if (pos_variant_position < other_variant_position)
-                        {
-                            int distance = other_variant_position - pos_variant_position;
-                            std::cout << sample_name << "\t" << distance << "\t" << pos << "\t" << *it << std::endl;
-                        }
-                    }
-                    ++it;
-                }
+            if (is_heterozygous) {
+                heterozygous_variants[sample_name].emplace(variant_position, variant_id);
             }
-            window_variants[sample_name].push_back(variant_id);
         }
 
         free(genotype);
+    }
+
+    // Now iterate over samples, then over their heterozygous variants
+    for (const auto &sample_entry : heterozygous_variants) {
+        const auto &sample_name = sample_entry.first;
+        const auto &variants = sample_entry.second;
+
+        for (auto it = variants.begin(); it != variants.end(); ++it) {
+            const auto &current_variant = *it;
+            
+            // Iterate over the remaining variants in the set to find close variants
+            for (auto jt = std::next(it); jt != variants.end(); ++jt) {
+                const auto &other_variant = *jt;
+
+                // If distance is within the limit, process the variant pair
+                if (abs(other_variant.first - current_variant.first) <= maxBpDist) {
+                    int distance = other_variant.first - current_variant.first;
+                    std::cout << sample_name << "\t" << distance << "\t"
+                            << current_variant.second << "\t" << other_variant.second << std::endl;
+                    // Since the set is sorted, and we have output this pair, 
+                    // there is no need to check them again in the reverse order.
+                    break; 
+                }
+                // Since the set is sorted, we can break early if we passed the possible close variants
+                else if (other_variant.first - current_variant.first > maxBpDist) {
+                    break;
+                }
+            }
+        }
     }
 
     // Release resources
