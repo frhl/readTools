@@ -1,3 +1,4 @@
+
 #include <htslib/sam.h>
 #include <htslib/hts.h>
 #include <sstream>
@@ -8,11 +9,13 @@
 #include <chrono>
 
 // Function to split a string by a delimiter character
-std::vector<std::string> split(const std::string &s, char delimiter) {
+std::vector<std::string> split(const std::string &s, char delimiter)
+{
     std::vector<std::string> tokens;
     std::string token;
     std::istringstream tokenStream(s);
-    while (std::getline(tokenStream, token, delimiter)) {
+    while (std::getline(tokenStream, token, delimiter))
+    {
         tokens.push_back(token);
     }
     return tokens;
@@ -35,7 +38,8 @@ void printUsage(const char *path)
     std::cerr << "  --ref/-r <Reference File>   : Required. Input reference genome file." << std::endl;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 
     if (argc < 2)
     {
@@ -50,7 +54,7 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "--pairs" || arg == "-p") && i + 1 < argc) 
+        if ((arg == "--pairs" || arg == "-p") && i + 1 < argc)
         {
             pairsFile = argv[++i];
         }
@@ -78,35 +82,35 @@ int main(int argc, char *argv[]) {
 
     // Open the gzipped input file
     gzFile file = gzopen(pairsFile.c_str(), "r");
-    if (!file) {
+    if (!file)
+    {
         std::cerr << "Could not open input file" << std::endl;
         return 1;
     }
 
     // Open the CRAM file
-    std::cerr << "Opening .cram file.." << std::endl;
     bam_hdr_t *header = NULL;
     htsFile *in = hts_open(cramFile.c_str(), "r");
-    
-    // set reference 
-    if (hts_set_fai_filename(in, refFile.c_str()) == -1) {
+
+    // set reference
+    if (hts_set_fai_filename(in, refFile.c_str()) == -1)
+    {
         std::cerr << "Could not set reference genome file. "
-                << "Ensure the file exists, is readable, and indexed (with .fai file)." << std::endl;
+                  << "Ensure the file exists, is readable, and indexed (with .fai file)." << std::endl;
         return 1;
     }
 
     header = sam_hdr_read(in);
 
-    std::cerr << "Loading .crai file.." << std::endl;
     hts_idx_t *idx = sam_index_load(in, cramFile.c_str());
-    if (idx == NULL) {
+    if (idx == NULL)
+    {
         std::cerr << "Couldn't load index" << std::endl;
         return 1;
     }
-
-    std::cerr << "Reading through gzfile" << std::endl;
     char buf[1024];
-    while (gzgets(file, buf, sizeof(buf))) {
+    while (gzgets(file, buf, sizeof(buf)))
+    {
         std::stringstream ss(buf);
         std::string sample, rsid1, rsid2;
         int dist;
@@ -115,78 +119,76 @@ int main(int argc, char *argv[]) {
         // Parse rsid1 and rsid2 to construct region
         std::vector<std::string> tokens1 = split(rsid1, ':');
         std::vector<std::string> tokens2 = split(rsid2, ':');
-        if (tokens1.size() < 2 || tokens2.size() < 2) {
+        if (tokens1.size() < 2 || tokens2.size() < 2)
+        {
             std::cerr << "Invalid rsid format" << std::endl;
-            continue; // skip this line or handle error
+            continue;
         }
 
-        std::string chr = tokens1[0];
-        std::string start_pos = tokens1[1];
-        std::string end_pos = tokens2[1];
-        std::string region = chr + ":" + start_pos + "-" + end_pos;
-
-	    hts_itr_t *iter = sam_itr_querys(idx, header, region.c_str());
-
+        // setup region
+        std::string region = tokens1[0] + ":" + tokens1[1] + "-" + tokens2[1];
+        hts_itr_t *iter = sam_itr_querys(idx, header, region.c_str());
         bam1_t *b = bam_init1();
 
-        int count_both = 0;
-        int count_rsid1 = 0;
-        int count_rsid2 = 0;
+        int count_cis = 0;
+        int count_trans = 0;
 
-        std::cerr << "Opening region " << region << std::endl;
-        while (sam_itr_next(in, iter, b) >= 0) {
+        int pos1 = stoi(tokens1[1]) - 1; // Convert to 0-based index
+        int pos2 = stoi(tokens2[1]) - 1; // Convert to 0-based index
+
+        int total_reads_covering_pos1 = 0;
+        int total_reads_covering_pos2 = 0;
+
+        while (sam_itr_next(in, iter, b) >= 0)
+        {
             uint8_t *seq = bam_get_seq(b);
-            uint32_t q2 = b->core.qual ; //mapping quality
+            uint32_t q2 = b->core.qual; // mapping quality
 
-            std::cerr << "Mapping quality: " << q2 << std::endl;
+            // Adjust indices to be relative to start of read
+            int read_start = b->core.pos; // start position of read
+            int adjusted_pos1 = pos1 - read_start;
+            int adjusted_pos2 = pos2 - read_start;
 
-            int pos1 = stoi(tokens1[1]) - 1; // Convert to 0-based index
-            int pos2 = stoi(tokens2[1]) - 1; // Convert to 0-based index
-
-            std::cerr << "converted index...." << std::endl;
-
-            if (seq == NULL) {
-                std::cerr << "seq is NULL. Skipping iteration." << std::endl;
-                continue;
+            // Check if the read covers pos1 
+            if (adjusted_pos1 >= 0 && adjusted_pos1 < b->core.l_qseq)
+            {
+                total_reads_covering_pos1++;
             }
 
-            std::cerr << "Checking variables before accessing sequence..." << std::endl;
-            if (b == NULL || seq == NULL) {
-                std::cerr << "Null pointer detected. Skipping iteration." << std::endl;
-                continue; // Skip to the next iteration if null pointer detected.
+            // check if the read covers pos2
+            if (adjusted_pos2 >= 0 && adjusted_pos2 < b->core.l_qseq)
+            {
+                total_reads_covering_pos2++;
             }
 
-            std::cerr << "Validating indices..." << std::endl;
-            // You might need a function to get the sequence length, adjust accordingly.
-            if (pos1 < 0 || pos2 < 0 /* || pos1 >= seq_length || pos2 >= seq_length */) {
-                std::cerr << "Invalid index detected. Skipping iteration." << std::endl;
-                continue; // Skip to the next iteration if index is invalid.
-            }
+            // We are interested in the reads covering two variants at once
+            if (adjusted_pos1 >= 0 && adjusted_pos1 < b->core.l_qseq && adjusted_pos2 >= 0 && adjusted_pos2 < b->core.l_qseq)
+            {
+                int index1 = bam_seqi(seq, adjusted_pos1);
+                int index2 = bam_seqi(seq, adjusted_pos2);
 
-            int index1 = bam_seqi(seq, pos1);
-            int index2 = bam_seqi(seq, pos2);
+                // get nucletide for pos1 and pos2
+                char nt1 = seq_nt16_str[index1];
+                char nt2 = seq_nt16_str[index2];
 
-            std::cerr << "Attempting to access sequence data..." << std::endl;
+                // std::cerr << nt1 << "\t" << region << std::endl;
+                // std::cerr << nt2 << "\t" << region << std::endl;
 
-            // You may also need to consider the read orientation and other factors
-            char nt1 = seq_nt16_str[bam_seqi(seq, pos1)];
-            char nt2 = seq_nt16_str[bam_seqi(seq, pos2)];
-
-            std::cerr << "Sequence data accessed successfully." << std::endl;
-
-            // Comparing nucleotides; you might need more sophisticated comparison for real data
-            if (nt1 == tokens1[2][0] && nt2 == tokens2[2][0]) {
-                count_both++;
-            } else if (nt1 == tokens1[2][0]) {
-                count_rsid1++;
-            } else if (nt2 == tokens2[2][0]) {
-                count_rsid2++;
+                // Comparing nucleotides; you might need more sophisticated comparison for real data
+                if (nt1 == tokens1[2][0] && nt2 == tokens2[2][0])
+                {
+                    count_cis++;
+                }
+                else
+                {
+                    count_trans++;
+                }
             }
         }
 
         // After the loop, you might want to output or store the counts
-        std::cout << rsid1 << "\t" << rsid2 << "\t" << count_both << "\t" << count_rsid1 << "\t" << count_rsid2 << std::endl;
-
+        std::cout << rsid1 << "\t" << rsid2 << "\t" << count_cis << "\t" << count_trans
+            << "\t" << total_reads_covering_pos1 << "\t" << total_reads_covering_pos2 << std::endl;
 
         // Clean up for this iteration
         bam_destroy1(b);
@@ -201,4 +203,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-

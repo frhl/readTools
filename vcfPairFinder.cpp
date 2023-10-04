@@ -95,6 +95,10 @@ int main(int argc, char *argv[])
         free(genotype);
     }
 
+    // print header
+    std::cout << "sample" << "\t" << "dist" << "\t"
+        << "rsid1" << "\t" << "rsid2" << std::endl;
+
     // Now iterate over samples, then over their heterozygous variants
     for (const auto &sample_entry : heterozygous_variants) {
         const auto &sample_name = sample_entry.first;
@@ -102,7 +106,7 @@ int main(int argc, char *argv[])
 
         for (auto it = variants.begin(); it != variants.end(); ++it) {
             const auto &current_variant = *it;
-            
+
             // Iterate over the remaining variants in the set to find close variants
             for (auto jt = std::next(it); jt != variants.end(); ++jt) {
                 const auto &other_variant = *jt;
@@ -123,6 +127,7 @@ int main(int argc, char *argv[])
             }
         }
     }
+
 
     // Release resources
     bcf_hdr_destroy(hdr);
