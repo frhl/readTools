@@ -27,13 +27,14 @@ WORKDIR ..
 # copy scripts
 WORKDIR app
 COPY makefile makefile
-COPY candiates.cpp candidates.cpp
-COPY phaseReads.cpp phaseReads.cpp
+COPY pairFinder.cpp pairFinder.cpp
+COPY readOverlap.cpp readOverlap.cpp
+COPY vcfPairFinder.cpp vcfPairFinder.cpp
 RUN make
 
 # move to folder in PATH
-RUN mv candidates /usr/local/bin/.
-RUN mv phaseReads /usr/local/bin/.
+RUN mv pairFinder /usr/local/bin/.
+RUN mv vcfPairFinder /usr/local/bin/.
 
 # Set default command to R when the container starts
 #CMD ["bash"]
